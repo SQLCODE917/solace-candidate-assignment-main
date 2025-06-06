@@ -26,6 +26,10 @@ The app is configured to return a default list of advocates. This will allow you
 docker compose up -d
 ```
 
+- `docker-compose ps` - to validate it's running
+- `docker exec -it solace-candidate-assignment-main-db-1 psql -U postgres -d solaceassignment` - to access the DB
+- `\dt` - to show tables (should be 0 now) 
+
 2. Create a `solaceassignment` database.
 
 3. Push migration to the database
@@ -34,8 +38,13 @@ docker compose up -d
 npx drizzle-kit push
 ```
 
+- `\dt` - to show tables (should exist now)
+
 4. Seed the database
 
 ```bash
 curl -X POST http://localhost:3000/api/seed
 ```
+
+- `SELECT * FROM advocates` - to validate the seeding succeeded
+- `curl http://localhost:3000/api/advocates` to validate the endpoint
