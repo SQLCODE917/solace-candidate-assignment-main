@@ -4,56 +4,135 @@ import { advocates } from "@/db/schema";
 import { advocateData } from "@/db/seed/advocates";
 import { Advocate } from "@/db/types";
 import { NextRequest } from "next/server";
-import { sql } from "drizzle-orm";
+import { sql, asc, desc, lt, gt, and, or, eq } from "drizzle-orm";
 
 export type AdvocatesResponse = {
   data: Advocate[];
   pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
+    nextCursor: string | null;
+    prevCursor: string | null;
     hasNextPage: boolean;
     hasPrevPage: boolean;
   };
 };
 
+export function encodeCursor(createdAt: string, id: number): string {
+  const cursor = Buffer.from(
+    JSON.stringify({
+      createdAt: createdAt,
+      id: id,
+    }),
+  ).toString("base64");
+
+  return cursor;
+}
+
+export function decodeCursor(cursor: string): {
+  createdAt: string;
+  id: number;
+} {
+  const { createdAt, id } = JSON.parse(
+    Buffer.from(cursor, "base64").toString(),
+  );
+
+  return { createdAt, id };
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get("page") || "1", 10);
+  const encodedCursor = searchParams.get("cursor");
+  // 'next' or 'prev'
+  const direction = searchParams.get("direction") || "prev";
   const pageSize = parseInt(searchParams.get("pageSize") || "5", 10);
 
-  const offset = (page - 1) * pageSize;
-  // Uncomment this line to use a database
-  //const data = await db.select().from(advocates);
-  //
-  //const data = advocateData;
+  const cursor = encodedCursor ? decodeCursor(encodedCursor) : null;
+  console.log(`Cursor: ${cursor?.createdAt} - ${cursor?.id}`);
 
-  // ISSUE: drizzle-orm was v0.33, which was out of date with the documentation.
-  // updating to latest version (v0.44.2) so that I can learn to use it from the documentation.
-  // ISSUE: no pagination, cannot support large datasets.
+  let where;
 
-  const [data, totalResult] = await Promise.all([
-    db.query.advocates.findMany({
-      offset,
-      limit: pageSize,
-    }),
-    db.execute(
-      sql<{ count: number }>`SELECT count(*)::int as count FROM ${advocates}`,
-    ),
-  ]);
-  const total = Number(totalResult[0]?.count) || 0;
-  const totalPages = Math.ceil(total / pageSize);
+  if (cursor) {
+    if (direction === "next") {
+      where = or(
+        lt(advocates.createdAt, cursor.createdAt),
+        and(
+          eq(advocates.createdAt, cursor.createdAt),
+          lt(advocates.id, cursor.id),
+        ),
+      );
+    } else {
+      where = or(
+        gt(advocates.createdAt, cursor.createdAt),
+        and(
+          eq(advocates.createdAt, cursor.createdAt),
+          gt(advocates.id, cursor.id),
+        ),
+      );
+    }
+  }
+
+  const data = await db.query.advocates.findMany({
+    where,
+    limit: pageSize,
+    orderBy: [desc(advocates.createdAt), desc(advocates.id)],
+  });
+
+  const lastAdvocate = data[data.length - 1];
+  const firstAdvocate = data[0];
+  console.log(
+    `Last advocate/next Cursor: ${lastAdvocate.id} - ${lastAdvocate?.createdAt}`,
+  );
+  console.log(
+    `First advocate/prev Cursor: ${firstAdvocate.id} - ${firstAdvocate?.createdAt}`,
+  );
+
+  const nextCursor = lastAdvocate?.createdAt
+    ? encodeCursor(lastAdvocate.createdAt, lastAdvocate.id)
+    : null;
+  const prevCursor = firstAdvocate?.createdAt
+    ? encodeCursor(firstAdvocate.createdAt, firstAdvocate.id)
+    : null;
+
+  const hasNextPageWhere = lastAdvocate?.createdAt
+    ? or(
+        lt(advocates.createdAt, lastAdvocate.createdAt),
+        and(
+          eq(advocates.createdAt, lastAdvocate.createdAt),
+          lt(advocates.id, lastAdvocate.id),
+        ),
+      )
+    : undefined;
+
+  const hasNextPage = nextCursor
+    ? await db.query.advocates.findFirst({
+        where: hasNextPageWhere,
+        orderBy: [desc(advocates.createdAt), desc(advocates.id)],
+      })
+    : false;
+
+  const hasPrevPageWhere = firstAdvocate?.createdAt
+    ? or(
+        gt(advocates.createdAt, firstAdvocate.createdAt),
+        and(
+          eq(advocates.createdAt, firstAdvocate.createdAt),
+          gt(advocates.id, firstAdvocate.id),
+        ),
+      )
+    : undefined;
+
+  const hasPrevPage = prevCursor
+    ? await db.query.advocates.findFirst({
+        where: hasPrevPageWhere,
+        orderBy: [asc(advocates.createdAt), asc(advocates.id)],
+      })
+    : false;
 
   return Response.json({
     data,
     pagination: {
-      page,
-      pageSize,
-      total,
-      totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: page > 1,
+      nextCursor,
+      prevCursor,
+      hasNextPage,
+      hasPrevPage,
     },
   });
 }

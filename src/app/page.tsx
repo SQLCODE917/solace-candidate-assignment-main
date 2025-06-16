@@ -1,43 +1,61 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import { Advocate } from "@/db/types";
 import DebouncedInput from "@/components/DebouncedInput";
 import { AdvocatesResponse } from "@/app/api/advocates/route";
 
-/* ISSUE: this is TS, but where are the types???
- */
+function getAdvocates(
+  cursor?: string,
+  direction?: string,
+): Promise<AdvocatesResponse> {
+  const url = new URL("/api/advocates", window.location.origin);
+  if (cursor) url.searchParams.set("cursor", cursor);
+  if (direction) url.searchParams.set("direction", direction);
+
+  return fetch(url.toString()).then((response) =>
+    response.json(),
+  ) as Promise<AdvocatesResponse>;
+}
+
 export default function Home() {
   const [advocates, setAdvocates] = useState<Advocate[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  /* adding pagination to support large datasets */
-  const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<
     AdvocatesResponse["pagination"] | null
   >(null);
-  /* ISSUE: no loading state hurts the user experience */
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log("fetching advocates...");
+    console.log("fetching advocates on page load...");
     setLoading(true);
-    fetch(`/api/advocates?page=${page}`)
-      .then((response) => response.json())
-      .then((jsonResponse: AdvocatesResponse) => {
+    getAdvocates()
+      .then((jsonResponse) => {
         setAdvocates(jsonResponse.data);
-        // pagination
         setPagination(jsonResponse.pagination);
       })
       .catch((error) => {
         console.log("ERRAR", error);
       })
       .finally(() => setLoading(false));
-  }, [page]);
+  }, []);
 
-  /* ISSUE: yearsOfExperience is a number, does not have 'includes' property
-   * ISSUE: requires exact string match, needs more flexibility
-   * ISSUE: extra rerenders from updating filtered advocates, memoizing
-   */
+  const onNavigation = useCallback(
+    (direction: "next" | "prev", cursor?: string) => {
+      setLoading(true);
+      getAdvocates(cursor, direction)
+        .then((jsonResponse) => {
+          setAdvocates(jsonResponse.data);
+          setPagination(jsonResponse.pagination);
+        })
+        .catch((error) => {
+          console.log("ERRAR", error);
+        })
+        .finally(() => setLoading(false));
+    },
+    [],
+  );
+
   const filteredAdvocates = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();
     return advocates.filter((advocate) => {
@@ -55,27 +73,15 @@ export default function Home() {
     });
   }, [searchTerm, advocates]);
 
-  /* ISSUE: 'e' has 'any' type, needs type correction
-   */
   const onSearchTermChange = (searchTerm: string) => {
-    //ISSUE: Not idiomatic, using state and {searchTerm} instead
-    //document.getElementById("search-term").innerHTML = searchTerm;
     setSearchTerm(searchTerm);
   };
 
   const onClick = () => {
     console.log(advocates);
-
-    /*ISSUE: it would be simpler to just reset the search term*/
-    //setFilteredAdvocates(advocates);
     setSearchTerm("");
   };
 
-  /*
-   * ISSUE: no key when mapping over filteredAdvocates and over specialties
-   * ISSUE: <input is uncontrolled and filters on every keystroke, needs a debouncing correction
-   * ISSUE: not-normative HTML - <th>s need to be in a <tr>
-   * */
   return (
     <main className="font-sans" style={{ margin: "24px" }}>
       <h1 className="padding-global bg-deepForestGreen text-white">
@@ -95,16 +101,17 @@ export default function Home() {
       <br />
       <div className="pagination-controls">
         <button
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          onClick={() => {
+            onNavigation("prev", pagination.prevCursor);
+          }}
           disabled={!pagination?.hasPrevPage}
         >
           Previous
         </button>
-        <span style={{ margin: "0 12px" }}>
-          Page {page} of {pagination?.totalPages}
-        </span>
         <button
-          onClick={() => setPage((p) => p + 1)}
+          onClick={() => {
+            onNavigation("next", pagination.nextCursor);
+          }}
           disabled={!pagination?.hasNextPage}
         >
           Next
@@ -125,7 +132,11 @@ export default function Home() {
         </thead>
         <tbody>
           {loading ? (
-            <div className="table-placeholder">Loading...</div>
+            <tr>
+              <td className="table-placeholder" colSpan={7}>
+                Loading...
+              </td>
+            </tr>
           ) : (
             filteredAdvocates.map((advocate, i) => {
               return (

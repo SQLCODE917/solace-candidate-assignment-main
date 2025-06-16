@@ -48,3 +48,14 @@ curl -X POST http://localhost:3000/api/seed
 
 - `SELECT * FROM advocates` - to validate the seeding succeeded
 - `curl http://localhost:3000/api/advocates` to validate the endpoint
+
+## Extra Improvements
+
+- Adding database logging
+- Supporting ever larger datasets by paginating based on the `createdAt` field
+- Indexing the `createdAt` field
+    - ISSUE: `drizzle-kit` did not generate or run migrations: "out of date"
+    Fixed by updating to `@latest`
+    - Verified index by `\d advocates` in psql
+- Because all the `createdAt` dates are the same, adding the `id` to the cursor
+
