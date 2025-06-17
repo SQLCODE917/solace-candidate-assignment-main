@@ -23,9 +23,9 @@ const advocates = pgTable(
     specialties: jsonb("payload").$type<string[]>().default([]).notNull(),
     yearsOfExperience: integer("years_of_experience").notNull(),
     phoneNumber: bigint("phone_number", { mode: "number" }).notNull(),
-    createdAt: timestamp("created_at", { mode: "string" }).default(
-      sql`CURRENT_TIMESTAMP`,
-    ),
+    createdAt: timestamp("created_at", { mode: "string" })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
   },
   (table) => ({
     createdAtIdx: index("advocates_created_at_idx").on(table.createdAt),

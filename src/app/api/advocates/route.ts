@@ -1,4 +1,3 @@
-// Stylistic change: "@"
 import db from "@/db";
 import { advocates } from "@/db/schema";
 import { advocateData } from "@/db/seed/advocates";
@@ -9,8 +8,8 @@ import { sql, asc, desc, lt, gt, and, or, eq } from "drizzle-orm";
 export type AdvocatesResponse = {
   data: Advocate[];
   pagination: {
-    nextCursor: string | null;
-    prevCursor: string | null;
+    nextCursor: string;
+    prevCursor: string;
     hasNextPage: boolean;
     hasPrevPage: boolean;
   };
@@ -42,16 +41,18 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const encodedCursor = searchParams.get("cursor");
   // 'next' or 'prev'
-  const direction = searchParams.get("direction") || "prev";
+  const direction = searchParams.get("direction") || "next";
   const pageSize = parseInt(searchParams.get("pageSize") || "5", 10);
 
   const cursor = encodedCursor ? decodeCursor(encodedCursor) : null;
-  console.log(`Cursor: ${cursor?.createdAt} - ${cursor?.id}`);
+  console.log(`Cursor: ${cursor?.createdAt} - ${cursor?.id} - ${direction}`);
 
   let where;
+  let orderBy = [desc(advocates.createdAt), desc(advocates.id)];
 
   if (cursor) {
     if (direction === "next") {
+      console.log("Cursor/Next query");
       where = or(
         lt(advocates.createdAt, cursor.createdAt),
         and(
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         ),
       );
     } else {
+      console.log("Cursor/Prev query");
       where = or(
         gt(advocates.createdAt, cursor.createdAt),
         and(
@@ -67,17 +69,21 @@ export async function GET(req: NextRequest): Promise<Response> {
           gt(advocates.id, cursor.id),
         ),
       );
+      orderBy = [asc(advocates.createdAt), asc(advocates.id)];
     }
   }
 
   const data = await db.query.advocates.findMany({
     where,
+    orderBy,
     limit: pageSize,
-    orderBy: [desc(advocates.createdAt), desc(advocates.id)],
   });
 
-  const lastAdvocate = data[data.length - 1];
-  const firstAdvocate = data[0];
+  /*
+   * When we go "previous", the order of results is reversed
+   */
+  const lastAdvocate = direction === "next" ? data[data.length - 1] : data[0];
+  const firstAdvocate = direction === "next" ? data[0] : data[data.length - 1];
   console.log(
     `Last advocate/next Cursor: ${lastAdvocate.id} - ${lastAdvocate?.createdAt}`,
   );
@@ -85,46 +91,30 @@ export async function GET(req: NextRequest): Promise<Response> {
     `First advocate/prev Cursor: ${firstAdvocate.id} - ${firstAdvocate?.createdAt}`,
   );
 
-  const nextCursor = lastAdvocate?.createdAt
-    ? encodeCursor(lastAdvocate.createdAt, lastAdvocate.id)
-    : null;
-  const prevCursor = firstAdvocate?.createdAt
-    ? encodeCursor(firstAdvocate.createdAt, firstAdvocate.id)
-    : null;
+  const nextCursor = encodeCursor(lastAdvocate.createdAt, lastAdvocate.id);
+  const prevCursor = encodeCursor(firstAdvocate.createdAt, firstAdvocate.id);
 
-  const hasNextPageWhere = lastAdvocate?.createdAt
-    ? or(
-        lt(advocates.createdAt, lastAdvocate.createdAt),
-        and(
-          eq(advocates.createdAt, lastAdvocate.createdAt),
-          lt(advocates.id, lastAdvocate.id),
-        ),
-      )
-    : undefined;
+  const hasNextPage = await db.query.advocates.findFirst({
+    where: or(
+      lt(advocates.createdAt, lastAdvocate.createdAt),
+      and(
+        eq(advocates.createdAt, lastAdvocate.createdAt),
+        lt(advocates.id, lastAdvocate.id),
+      ),
+    ),
+    orderBy: [desc(advocates.createdAt), desc(advocates.id)],
+  });
 
-  const hasNextPage = nextCursor
-    ? await db.query.advocates.findFirst({
-        where: hasNextPageWhere,
-        orderBy: [desc(advocates.createdAt), desc(advocates.id)],
-      })
-    : false;
-
-  const hasPrevPageWhere = firstAdvocate?.createdAt
-    ? or(
-        gt(advocates.createdAt, firstAdvocate.createdAt),
-        and(
-          eq(advocates.createdAt, firstAdvocate.createdAt),
-          gt(advocates.id, firstAdvocate.id),
-        ),
-      )
-    : undefined;
-
-  const hasPrevPage = prevCursor
-    ? await db.query.advocates.findFirst({
-        where: hasPrevPageWhere,
-        orderBy: [asc(advocates.createdAt), asc(advocates.id)],
-      })
-    : false;
+  const hasPrevPage = await db.query.advocates.findFirst({
+    where: or(
+      gt(advocates.createdAt, firstAdvocate.createdAt),
+      and(
+        eq(advocates.createdAt, firstAdvocate.createdAt),
+        gt(advocates.id, firstAdvocate.id),
+      ),
+    ),
+    orderBy: [asc(advocates.createdAt), asc(advocates.id)],
+  });
 
   return Response.json({
     data,
