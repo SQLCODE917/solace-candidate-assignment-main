@@ -18,6 +18,8 @@ type ReadyState = {
   advocates: Advocate[];
   pagination: AdvocatesResponse["pagination"];
   status: "ready";
+  sortColumn: keyof Advocate | undefined;
+  sortDirection: "asc" | "desc" | undefined;
 };
 type State = LoadingState | ErrorState | ReadyState;
 
@@ -34,45 +36,81 @@ export function useAdvocates() {
     status: "loading",
   });
 
-  const getAdvocates = useCallback((cursor?: string, direction?: string) => {
-    const url = new URL("/api/advocates", window.location.origin);
-    if (cursor) url.searchParams.set("cursor", cursor);
-    if (direction) url.searchParams.set("direction", direction);
+  const getAdvocates = useCallback(
+    (
+      props: {
+        sortColumn?: ReadyState["sortColumn"];
+        sortDirection?: ReadyState["sortDirection"];
+        cursor?: string;
+        direction?: string;
+      } = {},
+    ) => {
+      const url = new URL("/api/advocates", window.location.origin);
+      const { sortColumn, sortDirection, cursor, direction } = props;
 
-    setState({ status: "loading" });
+      if (cursor) url.searchParams.set("cursor", cursor);
+      if (direction) url.searchParams.set("direction", direction);
+      if (sortColumn) url.searchParams.set("column", sortColumn);
+      if (sortDirection) url.searchParams.set("sort", sortDirection);
 
-    fetch(url.toString())
-      .then((response) => response.json())
-      .then((jsonResponse) => {
-        setState({
-          status: "ready",
-          advocates: jsonResponse.data,
-          pagination: jsonResponse.pagination,
+      setState({ status: "loading" });
+
+      fetch(url.toString())
+        .then((response) => response.json())
+        .then((jsonResponse) => {
+          setState({
+            status: "ready",
+            advocates: jsonResponse.data,
+            pagination: jsonResponse.pagination,
+            sortColumn,
+            sortDirection,
+          });
+        })
+        .catch((error) => {
+          console.error("Get Advocates Error:", error);
+          setState({
+            status: "error",
+            error: error.message,
+          });
         });
-      })
-      .catch((error) => {
-        console.error("Get Advocates Error:", error);
-        setState({
-          status: "error",
-          error: error.message,
-        });
-      });
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     console.log("fetching advocates on page load...");
     getAdvocates();
   }, [getAdvocates]);
 
+  const sort = (sortColumn: ReadyState["sortColumn"]) => {
+    console.log("sorting by " + sortColumn);
+    if (isReadyState(state)) {
+      const newDirection: ReadyState["sortDirection"] =
+        state.sortDirection === "asc" ? "desc" : "asc";
+
+      getAdvocates({ sortColumn, sortDirection: newDirection });
+    }
+  };
+
   const onNextPage = useCallback(() => {
     if (isReadyState(state)) {
-      getAdvocates(state.pagination.nextCursor, "next");
+      getAdvocates({
+        sortColumn: state.sortColumn,
+        sortDirection: state.sortDirection,
+        cursor: state.pagination.nextCursor,
+        direction: "next",
+      });
     }
   }, [getAdvocates, state]);
 
   const onPrevPage = useCallback(() => {
     if (isReadyState(state)) {
-      getAdvocates(state.pagination.prevCursor, "prev");
+      getAdvocates({
+        sortColumn: state.sortColumn,
+        sortDirection: state.sortDirection,
+        cursor: state.pagination.prevCursor,
+        direction: "prev",
+      });
     }
   }, [getAdvocates, state]);
 
@@ -90,6 +128,7 @@ export function useAdvocates() {
     onNextPage,
     hasNextPage,
     hasPrevPage,
+    sort,
   };
 }
 
@@ -100,25 +139,19 @@ export function useSearch(state: State) {
     if (!isReadyState(state)) return [];
 
     const normalizedTerm = searchTerm.trim().toLowerCase();
-    return state.advocates
-      .filter((advocate) => {
-        const fields = [
-          advocate.firstName,
-          advocate.lastName,
-          advocate.city,
-          advocate.degree,
-          ...advocate.specialties,
-          String(advocate.yearsOfExperience),
-        ];
-        return fields.some((field) =>
-          field.toLowerCase().includes(normalizedTerm),
-        );
-      })
-      .sort((a, b) => {
-        // always sort in descending order by ID
-        // because "previous" cursor returns in asc. order
-        return b.id - a.id;
-      });
+    return state.advocates.filter((advocate) => {
+      const fields = [
+        advocate.firstName,
+        advocate.lastName,
+        advocate.city,
+        advocate.degree,
+        ...advocate.specialties,
+        String(advocate.yearsOfExperience),
+      ];
+      return fields.some((field) =>
+        field.toLowerCase().includes(normalizedTerm),
+      );
+    });
   }, [searchTerm, state]);
 
   const searchFor = (searchTerm: string) => {
@@ -138,7 +171,7 @@ export function useSearch(state: State) {
 }
 
 export default function Home() {
-  const { state, onPrevPage, onNextPage, hasNextPage, hasPrevPage } =
+  const { state, onPrevPage, onNextPage, hasNextPage, hasPrevPage, sort } =
     useAdvocates();
 
   const { filteredAdvocates, searchTerm, searchFor, resetSearch } =
@@ -183,7 +216,19 @@ export default function Home() {
       <table className="advocates-table">
         <thead>
           <tr>
-            <th>First Name</th>
+            <th
+              onClick={() => {
+                /* Given more time, would refactor into a SortableTH component
+                 * that would have a hover state and sort triangles or something for UX
+                 */
+                sort("firstName");
+              }}
+            >
+              First Name
+              {isReadyState(state) &&
+                state.sortColumn === "firstName" &&
+                ` (${state.sortDirection})`}
+            </th>
             <th>Last Name</th>
             <th>City</th>
             <th>Degree</th>
