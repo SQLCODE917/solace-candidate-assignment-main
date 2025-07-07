@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Advocate } from "@/db/types";
 import DebouncedInput from "@/components/DebouncedInput";
+import SortableHeader from "@/components/SortableHeader";
 import { AdvocatesResponse } from "@/app/api/advocates/route";
 
 type LoadingState = { status: "loading" };
@@ -43,7 +44,7 @@ export function useAdvocates() {
         sortDirection?: ReadyState["sortDirection"];
         cursor?: string;
         direction?: string;
-      } = {},
+      } = {}
     ) => {
       const url = new URL("/api/advocates", window.location.origin);
       const { sortColumn, sortDirection, cursor, direction } = props;
@@ -74,7 +75,7 @@ export function useAdvocates() {
           });
         });
     },
-    [],
+    []
   );
 
   useEffect(() => {
@@ -149,7 +150,7 @@ export function useSearch(state: State) {
         String(advocate.yearsOfExperience),
       ];
       return fields.some((field) =>
-        field.toLowerCase().includes(normalizedTerm),
+        field.toLowerCase().includes(normalizedTerm)
       );
     });
   }, [searchTerm, state]);
@@ -216,19 +217,24 @@ export default function Home() {
       <table className="advocates-table">
         <thead>
           <tr>
-            <th
-              onClick={() => {
-                /* Given more time, would refactor into a SortableTH component
-                 * that would have a hover state and sort triangles or something for UX
-                 */
+            <SortableHeader
+              onSort={() => {
                 sort("firstName");
               }}
+              sort={isReadyState(state) && state.sortColumn === "firstName"}
+              sortDirection={state.sortDirection}
             >
               First Name
-              {isReadyState(state) &&
-                state.sortColumn === "firstName" &&
-                ` (${state.sortDirection})`}
-            </th>
+            </SortableHeader>
+            <SortableHeader
+              onSort={() => {
+                sort("lastName");
+              }}
+              sort={isReadyState(state) && state.sortColumn === "lastName"}
+              sortDirection={state.sortDirection}
+            >
+              Last Name
+            </SortableHeader>
             <th>Last Name</th>
             <th>City</th>
             <th>Degree</th>

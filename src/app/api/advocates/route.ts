@@ -1,9 +1,8 @@
 import db from "@/db";
 import { advocates } from "@/db/schema";
-import { advocateData } from "@/db/seed/advocates";
 import { Advocate } from "@/db/types";
 import { NextRequest } from "next/server";
-import { sql, asc, desc, lt, gt, and, or, eq } from "drizzle-orm";
+import { asc, desc, lt, gt } from "drizzle-orm";
 
 export type AdvocatesResponse = {
   data: Advocate[];
@@ -139,7 +138,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   } else {
     console.log("PAGINATION");
     console.log(
-      `Direction: ${direction}, column: ${cursor.column}, sort: ${cursor.sort}, value: ${cursor.value}`,
+      `Direction: ${direction}, column: ${cursor.column}, sort: ${cursor.sort}, value: ${cursor.value}`
     );
     if (cursor.sort === "asc") {
       orderBy = [asc(advocates[cursor.column])];
